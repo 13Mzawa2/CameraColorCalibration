@@ -31,7 +31,7 @@ using namespace std;
 
 //	最小化パラメータと初期値
 cv::Vec3d gamma(2.2,2.2,2.2);			//	ガンマ係数 B, G, R
-cv::Vec3d Lmax(200.0, 400.0, 300.0);	//	受光感度 B, G, R
+cv::Vec3d Lmax(100.0, 400.0, 300.0);	//	受光感度 B, G, R
 std::vector<cv::Point2d> xy = {				//	受光体のxy色度
 	cv::Point2d(0.2, 0.2),				//	xB, yB
 	cv::Point2d(0.25, 0.5),				//	xG, yG
@@ -59,7 +59,7 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 		params.at<double>(i*4 + 3) = xy_[i].y;
 	}
 	//	更新値の評価関数errorが閾値以下になったら抜け出す
-	for (double error = 100.0; error > 1.0e-6;) {
+	for (double error = 100.0; error > 1.0e-2;) {
 		//	更新後のパラメータ
 		cv::Vec3d gamma_new(params.at<double>(0 + 0), params.at<double>(0 + 4), params.at<double>(0 + 8));
 		cv::Vec3d Lmax_new(params.at<double>(1 + 0), params.at<double>(1 + 4), params.at<double>(1 + 8));
@@ -78,8 +78,9 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 			}
 		}
 		//	増分 d_params の計算
-		cv::Mat d_params = (J.t()*J).inv()*-J.t()*sigma;
-		cout << determinant(J.t()*J) << endl;
+		cv::Mat d_params = -(J.t()*J).inv()*J.t()*sigma;
+		//cout << J.col(5) << endl;
+		//cout << J.t().row(5).t() << endl;
 		//cout << d_params << endl;
 		//	増分の大きさの比較
 		error = cv::norm(d_params);
@@ -99,7 +100,7 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 //	XYZは全て別要素として扱い，XYZXYZ...と格納されている
 cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, std::vector<cv::Point2d> xy_)
 {
-	const double dx = 1.0e-4;			//	パラメータの増分
+	const double dx = 1.0e-6;			//	パラメータの増分
 	std::vector<double> params;			//	パラメータは全部で12次元
 	for (int i = 0; i < 3; i++) {		//	B関係全て，G関係全て，R関係全て，の順に並ぶ
 		params.push_back(gamma_[i]);
@@ -119,16 +120,16 @@ cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, 
 				params_d.push_back(params[k]);
 		}
 		//	第i成分の微小変化後のパラメータ
-		cv::Vec3d gamma_d(params_d[0], params_d[0+4], params_d[0+8]);
-		cv::Vec3d Lmax_d(params_d[1], params_d[1+4], params_d[1+8]);
+		cv::Vec3d gamma_d(params_d[0], params_d[0 + 4], params_d[0 + 8]);
+		cv::Vec3d Lmax_d(params_d[1], params_d[1 + 4], params_d[1 + 8]);
 		std::vector<cv::Point2d> xy_d = {
 			cv::Point2d(params_d[2], params_d[3]),
-			cv::Point2d(params_d[2+4], params_d[3+4]),
-			cv::Point2d(params_d[2+8], params_d[3+8])
+			cv::Point2d(params_d[2 + 4], params_d[3 + 4]),
+			cv::Point2d(params_d[2 + 8], params_d[3 + 8])
 		};
 		for (int j = 0; j < Jt.cols/3; j++) {	//	色数の変数
-			cv::Vec3d sigma = calcError(BGRs_[i], XYZs_[i], gamma_, Lmax_, xy_);			//	sigma
-			cv::Vec3d sigma_d = calcError(BGRs_[i], XYZs_[i], gamma_d, Lmax_d, xy_d);		//	sigma + dsi
+			cv::Vec3d sigma = calcError(BGRs_[j], XYZs_[j], gamma_, Lmax_, xy_);			//	sigma
+			cv::Vec3d sigma_d = calcError(BGRs_[j], XYZs_[j], gamma_d, Lmax_d, xy_d);		//	sigma + dsi
 			for (int k = 0; k < 3; k++) {		//	XYZチャンネルの変数
 				Jt.at<double>(i, j*3+k) = (sigma_d[k] - sigma[k]) / dx;			//	dsi/dxi
 			}
@@ -144,7 +145,7 @@ cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Vec3d Lm
 	cv::Vec3d estXYZ = calcXYZ(BGR, gamma_, Lmax_, xy_);
 	cv::Vec3d sigma;
 	for (int i = 0; i < 3; i++) {
-		sigma[i] = abs(estXYZ[i] - XYZ[i]);
+		sigma[i] = sqrt((estXYZ[i] - XYZ[i])*(estXYZ[i] - XYZ[i]));
 	}
 	return sigma;
 }
@@ -211,12 +212,13 @@ int main(void)
 	cout << "\n\n----------------------"
 		<< "\n\tResult"
 		<< "\n----------------------"
-		<< "\ngamma = " << gamma
-		<< "\nLmax = " << Lmax
+		<< "\ngamma_BGR = " << gamma
+		<< "\nLmax_BGR = " << Lmax
 		<< "\nxy_B = " << xy[0]
 		<< "\nxy_G = " << xy[1]
 		<< "\nxy_R = " << xy[2]
 		<< endl;
+	cout << "XYZ = " << XYZs[0] << "\nEstimated XYZ = " << calcXYZ(BGRs[0], gamma, Lmax, xy) << endl;
 
 	system("PAUSE");
 	return 0;
