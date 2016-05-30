@@ -5,7 +5,9 @@ Author: Nishizawa  Date: 2016/05/30
 ver. 0.1 ColorCheckerのXYZと，それに対応する
 カメラ画像のRGB値を入力してカラープロファイルを出力する
 但し全てのRGB関連はBGR順
+
 使用ライブラリ：OpenCV 3.1
+(線形代数用ライブラリとして使用)
 **************************************************/
 
 #include <opencv2\opencv.hpp>
@@ -38,16 +40,66 @@ std::vector<cv::Point2d> xy = {				//	受光体のxy色度
 
 
 //	関数プロトタイプ
+void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, std::vector<cv::Point2d> &xy_);
 cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, std::vector<cv::Point2d> xy_);
 cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Vec3d Lmax_, std::vector<cv::Point2d> xy_);
 cv::Vec3d calcXYZ(cv::Vec3d BGR, cv::Vec3d gamma_, cv::Vec3d Lmax_, std::vector<cv::Point2d> xy_);
 cv::Vec3d operator*(cv::Mat m, cv::Vec3d &v);
 
+
+//	Gauss-Newton法
+void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, std::vector<cv::Point2d> &xy_)
+{
+	cv::Mat sigma(XYZs_.size() * 3, 1, CV_64FC1);		//	二乗誤差関数の要素毎のベクトル sigma(params)
+	cv::Mat params(12, 1, CV_64FC1);					//	12個のパラメータベクトル params の初期値
+	for (int i = 0; i < 3; i++) {
+		params.at<double>(i*4 + 0) = gamma_[i];
+		params.at<double>(i*4 + 1) = Lmax_[i];
+		params.at<double>(i*4 + 2) = xy_[i].x;
+		params.at<double>(i*4 + 3) = xy_[i].y;
+	}
+	//	更新値の評価関数errorが閾値以下になったら抜け出す
+	for (double error = 100.0; error > 1.0e-6;) {
+		//	更新後のパラメータ
+		cv::Vec3d gamma_new(params.at<double>(0 + 0), params.at<double>(0 + 4), params.at<double>(0 + 8));
+		cv::Vec3d Lmax_new(params.at<double>(1 + 0), params.at<double>(1 + 4), params.at<double>(1 + 8));
+		std::vector<cv::Point2d> xy_new = {
+			cv::Point2d(params.at<double>(2 + 0), params.at<double>(3 + 0)),
+			cv::Point2d(params.at<double>(2 + 4), params.at<double>(3 + 4)),
+			cv::Point2d(params.at<double>(2 + 8), params.at<double>(3 + 8))
+		};
+		//	ヤコビ行列 J(params) の導出
+		cv::Mat J = JacobianMat(BGRs_, XYZs_, gamma_new, Lmax_new, xy_new);
+		//	誤差ベクトル sigma(params) の導出
+		for (int i = 0; i < XYZs_.size(); i++) {
+			cv::Vec3d e3 = calcError(BGRs_[i], XYZs_[i], gamma_new, Lmax_new, xy_new);
+			for (int j = 0; j < 3; j++) {
+				sigma.at<double>(i * 3 + j) = e3[j];
+			}
+		}
+		//	増分 d_params の計算
+		cv::Mat d_params = (J.t()*J).inv()*-J.t()*sigma;
+		cout << determinant(J.t()*J) << endl;
+		//cout << d_params << endl;
+		//	増分の大きさの比較
+		error = cv::norm(d_params);
+		cout << "error = " << error << endl;
+		//	パラメータの更新
+		params = params + d_params;
+	}
+	//	結果を参照渡し
+	gamma_ = cv::Vec3d(params.at<double>(0 + 0), params.at<double>(0 + 4), params.at<double>(0 + 8));
+	Lmax_ = cv::Vec3d(params.at<double>(1 + 0), params.at<double>(1 + 4), params.at<double>(1 + 8));
+	xy_[0] = cv::Point2d(params.at<double>(2 + 0), params.at<double>(3 + 0));
+	xy_[1] = cv::Point2d(params.at<double>(2 + 4), params.at<double>(3 + 4));
+	xy_[2] = cv::Point2d(params.at<double>(2 + 8), params.at<double>(3 + 8));
+}
+
 //	sigma(params)のparamsに対するヤコビ行列Jの導出
 //	XYZは全て別要素として扱い，XYZXYZ...と格納されている
 cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, std::vector<cv::Point2d> xy_)
 {
-	const double dx = 1.0e-5;			//	パラメータの増分
+	const double dx = 1.0e-4;			//	パラメータの増分
 	std::vector<double> params;			//	パラメータは全部で12次元
 	for (int i = 0; i < 3; i++) {		//	B関係全て，G関係全て，R関係全て，の順に並ぶ
 		params.push_back(gamma_[i]);
@@ -56,8 +108,8 @@ cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, 
 		params.push_back(xy_[i].y);
 	}
 	//	ヤコビ行列
-	cv::Mat J(params.size(), XYZs_.size()*3, CV_64FC1);
-	for (int i = 0; i < J.rows; i++) {			//	パラメータの変数
+	cv::Mat Jt(params.size(), XYZs_.size()*3, CV_64FC1);
+	for (int i = 0; i < Jt.rows; i++) {			//	パラメータの変数
 		//	パラメータの微小変化
 		std::vector<double> params_d;			//	第i成分のパラメータをdxだけ増加したもの
 		for (int k = 0; k < params.size(); k++) {
@@ -74,16 +126,16 @@ cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, 
 			cv::Point2d(params_d[2+4], params_d[3+4]),
 			cv::Point2d(params_d[2+8], params_d[3+8])
 		};
-		for (int j = 0; j < J.cols/3; j++) {	//	色数の変数
+		for (int j = 0; j < Jt.cols/3; j++) {	//	色数の変数
 			cv::Vec3d sigma = calcError(BGRs_[i], XYZs_[i], gamma_, Lmax_, xy_);			//	sigma
-			cv::Vec3d sigma_d = calcError(BGRs_[i], XYZs_[i], gamma_d, Lmax_d, xy_d);		//	sigma + ds
+			cv::Vec3d sigma_d = calcError(BGRs_[i], XYZs_[i], gamma_d, Lmax_d, xy_d);		//	sigma + dsi
 			for (int k = 0; k < 3; k++) {		//	XYZチャンネルの変数
-				J.at<double>(i, j*3+k) = (sigma_d[k] - sigma[k]) / dx;
+				Jt.at<double>(i, j*3+k) = (sigma_d[k] - sigma[k]) / dx;			//	dsi/dxi
 			}
 		}
 		params_d.clear();		//	パラメータベクトルの開放
 	}
-	return J;
+	return Jt.t();		//	↑は間違えてJ.t()を求めてたためもう一度転置
 }
 
 //	色の推定値と測定値との二乗誤差の平方根 sigma(params) (X, Y, Zの順)
@@ -154,8 +206,17 @@ int main(void)
 		XYZs.push_back(Vec3d(data[0], data[1], data[2]));
 		BGRs.push_back(Vec3d(data[3], data[4], data[5]));
 	}
-	Mat J = JacobianMat(BGRs, XYZs, gamma, Lmax, xy);
-	cout << J << endl;
+	
+	GaussNewtonMethod(BGRs, XYZs, gamma, Lmax, xy);
+	cout << "\n\n----------------------"
+		<< "\n\tResult"
+		<< "\n----------------------"
+		<< "\ngamma = " << gamma
+		<< "\nLmax = " << Lmax
+		<< "\nxy_B = " << xy[0]
+		<< "\nxy_G = " << xy[1]
+		<< "\nxy_R = " << xy[2]
+		<< endl;
 
 	system("PAUSE");
 	return 0;
