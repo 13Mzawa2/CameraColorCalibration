@@ -31,7 +31,6 @@ using namespace std;
 
 //	Å¬‰»ƒpƒ‰ƒ[ƒ^‚Æ‰Šú’l
 cv::Vec3d gamma(1.2,1.2,1.2);			//	ƒKƒ“ƒ}ŒW” B, G, R
-cv::Vec3d Lmax(200.0, 800.0, 500.0);	//	óŒõŠ´“x B, G, R
 //std::vector<cv::Point2d> xy = {			//	óŒõ‘Ì‚ÌxyF“x
 //	cv::Point2d(0.1, 0.2),				//	xB, yB
 //	cv::Point2d(0.3, 0.5),				//	xG, yG
@@ -46,10 +45,10 @@ cv::Mat V_BGR2XYZ = (cv::Mat_<double>(3, 3) << 	//	ƒKƒ“ƒ}•â³Ï‚İ‚ÌBGR‚©‚çXYZ‚Ö‚
 //	ŠÖ”ƒvƒƒgƒ^ƒCƒv
 cv::Mat calcErrorVector(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Mat params_);
 double goldenRatioSearch(std::vector<cv::Vec3d> BGRs_, std::vector < cv::Vec3d> XYZs_, cv::Mat params_, cv::Mat d_params_);
-double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, cv::Mat &V_);
-cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_);
-cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_);
-cv::Vec3d calcXYZ(cv::Vec3d BGR, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_);
+double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Mat &V_);
+cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Mat V_);
+cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Mat V_);
+cv::Vec3d calcXYZ(cv::Vec3d BGR, cv::Vec3d gamma_, cv::Mat V_);
 cv::Vec3d operator*(cv::Mat m, cv::Vec3d &v);
 
 
@@ -100,18 +99,17 @@ double goldenRatioSearch(std::vector<cv::Vec3d> BGRs_, std::vector < cv::Vec3d> 
 cv::Mat calcErrorVector(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Mat params_)
 {
 	//	ƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹‚ğŠe—v‘f‚É•ÏŠ·
-	cv::Vec3d gamma_(params_.at<double>(0), params_.at<double>(2), params_.at<double>(4));
-	cv::Vec3d Lmax_(params_.at<double>(1), params_.at<double>(3), params_.at<double>(5));
+	cv::Vec3d gamma_(params_.at<double>(0), params_.at<double>(1), params_.at<double>(2));
 	cv::Mat V_(3, 3, CV_64FC1);
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++) {
-			V_.at<double>(i, j) = params_.at<double>(6 + i * 3 + j);
+			V_.at<double>(i, j) = params_.at<double>(3 + i * 3 + j);
 		}
 	}
 	cv::Mat sigma(XYZs_.size() * 3, 1, CV_64FC1);
 	//	Œë·ƒxƒNƒgƒ‹ sigma(params) ‚Ì“±o
 	for (int i = 0; i < XYZs_.size(); i++) {
-		cv::Vec3d e3 = calcError(BGRs_[i], XYZs_[i], gamma_, Lmax_, V_);
+		cv::Vec3d e3 = calcError(BGRs_[i], XYZs_[i], gamma_, V_);
 		for (int j = 0; j < 3; j++) {
 			sigma.at<double>(i * 3 + j) = e3[j];
 		}
@@ -120,37 +118,35 @@ cv::Mat calcErrorVector(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZ
 }
 
 //	Gauss-Newton–@
-double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, cv::Mat &V_)
+double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Mat &V_)
 {
 	cv::Mat sigma(XYZs_.size() * 3, 1, CV_64FC1);		//	“ñæŒë·ŠÖ”‚Ì—v‘f–ˆ‚ÌƒxƒNƒgƒ‹ sigma(params)
-	cv::Mat params(15, 1, CV_64FC1);					//	15ŒÂ‚Ìƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹ params ‚Ì‰Šú’l
+	cv::Mat params(12, 1, CV_64FC1);					//	12ŒÂ‚Ìƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹ params ‚Ì‰Šú’l
 	for (int i = 0; i < 3; i++) {
-		params.at<double>(i*2 + 0) = gamma_[i];
-		params.at<double>(i*2 + 1) = Lmax_[i];
+		params.at<double>(i) = gamma_[i];
 	}
 	for (int i = 0; i < 3; i++) {		//	V_BGR2XYZ‚É‚Â‚¢‚Ä‚ÍÅŒã‚É•À‚×‚é
 		for (int j = 0; j < 3; j++) {
-			params.at<double>(6 + i * 3 + j) = V_.at<double>(i, j);
+			params.at<double>(3 + i * 3 + j) = V_.at<double>(i, j);
 		}
 	}
-
+	//cout << params << endl;
 	//	XV’l‚Ì•]‰¿ŠÖ”error‚ªè‡’lˆÈ‰º‚É‚È‚Á‚½‚ç”²‚¯o‚·
 	double error = 100.0;
-	for (int count = 0; error > 1.0e-6 && count < 3000; count++) {
+	for (int count = 0; error > 1.0e-6 && count < 1000; count++) {
 		//	XVŒã‚Ìƒpƒ‰ƒ[ƒ^
-		cv::Vec3d gamma_new(params.at<double>(0), params.at<double>(2), params.at<double>(4));
-		cv::Vec3d Lmax_new(params.at<double>(1), params.at<double>(3), params.at<double>(5));
+		cv::Vec3d gamma_new(params.at<double>(0), params.at<double>(1), params.at<double>(2));
 		cv::Mat V_new(3, 3, CV_64FC1);
 		for (int i = 0; i < 3; i++) {
 			for (int j = 0; j < 3; j++) {
-				V_new.at<double>(i, j) = params.at<double>(6 + i * 3 + j);
+				V_new.at<double>(i, j) = params.at<double>(3 + i * 3 + j);
 			}
 		}
 		//	ƒ„ƒRƒrs—ñ J(params) ‚Ì“±o
-		cv::Mat J = JacobianMat(BGRs_, XYZs_, gamma_new, Lmax_new, V_new);
+		cv::Mat J = JacobianMat(BGRs_, XYZs_, gamma_new, V_new);
 		//	Œë·ƒxƒNƒgƒ‹ sigma(params) ‚Ì“±o
 		for (int i = 0; i < XYZs_.size(); i++) {
-			cv::Vec3d e3 = calcError(BGRs_[i], XYZs_[i], gamma_new, Lmax_new, V_new);
+			cv::Vec3d e3 = calcError(BGRs_[i], XYZs_[i], gamma_new, V_new);
 			for (int j = 0; j < 3; j++) {
 				sigma.at<double>(i * 3 + j) = e3[j];
 			}
@@ -165,17 +161,16 @@ double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XY
 		params = params + alpha*d_params;
 		//	‘•ª‚Ì‘å‚«‚³‚Ì”äŠr
 		error = cv::norm(d_params);
-		//cout << "count\t" << count << ":\terror = " << error << "\tgain = " << alpha << endl;
-		if (error > 1.0e8) break;
+		cout << "count\t" << count << ":\terror = " << error << "\tgain = " << alpha << endl;
+		//if (error > 1.0e8) break;
 	}
 
 	//	Œ‹‰Ê‚ğQÆ“n‚µ
-	gamma_ = cv::Vec3d(params.at<double>(0 + 0), params.at<double>(0 + 4), params.at<double>(0 + 8));
-	Lmax_ = cv::Vec3d(params.at<double>(1 + 0), params.at<double>(1 + 4), params.at<double>(1 + 8));
+	gamma_ = cv::Vec3d(params.at<double>(0), params.at<double>(1), params.at<double>(2));
 	cv::Mat VV(3, 3, CV_64FC1);
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++) {
-			VV.at<double>(i, j) = params.at<double>(6 + i * 3 + j);
+			VV.at<double>(i, j) = params.at<double>(3 + i * 3 + j);
 		}
 	}
 	V_ = VV.clone(); 
@@ -187,13 +182,12 @@ double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XY
 
 //	sigma(params)‚Ìparams‚É‘Î‚·‚éƒ„ƒRƒrs—ñJ‚Ì“±o
 //	XYZ‚Í‘S‚Ä•Ê—v‘f‚Æ‚µ‚Äˆµ‚¢CXYZXYZ...‚ÆŠi”[‚³‚ê‚Ä‚¢‚é
-cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_)
+cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Mat V_)
 {
 	const double dx = 1.0e-6;			//	ƒpƒ‰ƒ[ƒ^‚Ì‘•ª
 	std::vector<double> params;			//	ƒpƒ‰ƒ[ƒ^‚Í‘S•”‚Å12ŸŒ³
 	for (int i = 0; i < 3; i++) {		//	gamma, Lmax‚É‚Â‚¢‚Ä‚ÍBŠÖŒW‘S‚ÄCGŠÖŒW‘S‚ÄCRŠÖŒW‘S‚ÄC‚Ì‡‚É•À‚Ô
 		params.push_back(gamma_[i]);
-		params.push_back(Lmax_[i]);
 	}
 	for (int i = 0; i < 3; i++) {		//	V_BGR2XYZ‚É‚Â‚¢‚Ä‚ÍÅŒã‚É•À‚×‚é
 		for (int j = 0; j < 3; j++) {
@@ -212,15 +206,18 @@ cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, 
 				params_d.push_back(params[k]);
 		}
 		//	‘æi¬•ª‚Ì”÷¬•Ï‰»Œã‚Ìƒpƒ‰ƒ[ƒ^
-		cv::Vec3d gamma_d(params_d[0], params_d[2], params_d[4]);
-		cv::Vec3d Lmax_d(params_d[1], params_d[3], params_d[5]);
-		cv::Mat V_d = (cv::Mat_<double>(3, 3)
-			<< params_d[6], params_d[7], params_d[8],
-			params_d[9], params_d[10], params_d[11],
-			params_d[12], params_d[13], params_d[14]);
+		cv::Vec3d gamma_d(params_d[0], params_d[1], params_d[2]);
+		cv::Mat V_d(3, 3, CV_64FC1);
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < 3; j++) {
+				V_d.at<double>(i, j) = params_d[3+i*3+j];
+			}
+		}
+		//cout << gamma_d << endl;
+		//cout << V_d << endl;
 		for (int j = 0; j < Jt.cols/3; j++) {	//	F”‚Ì•Ï”
-			cv::Vec3d sigma = calcError(BGRs_[j], XYZs_[j], gamma_, Lmax_, V_);			//	sigma
-			cv::Vec3d sigma_d = calcError(BGRs_[j], XYZs_[j], gamma_d, Lmax_d, V_d);		//	sigma + dsi
+			cv::Vec3d sigma = calcError(BGRs_[j], XYZs_[j], gamma_, V_);			//	sigma
+			cv::Vec3d sigma_d = calcError(BGRs_[j], XYZs_[j], gamma_d, V_d);		//	sigma + dsi
 			for (int k = 0; k < 3; k++) {		//	XYZƒ`ƒƒƒ“ƒlƒ‹‚Ì•Ï”
 				Jt.at<double>(i, j*3+k) = (sigma_d[k] - sigma[k]) / dx;			//	dsi/dxi
 			}
@@ -230,9 +227,9 @@ cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, 
 }
 
 //	F‚Ì„’è’l‚Æ‘ª’è’l‚Æ‚Ì“ñæŒë·‚Ì•½•ûª sigma(params) (X, Y, Z‚Ì‡)
-cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_)
+cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Mat V_)
 {
-	cv::Vec3d estXYZ = calcXYZ(BGR, gamma_, Lmax_, V_);
+	cv::Vec3d estXYZ = calcXYZ(BGR, gamma_,V_);
 	cv::Vec3d sigma;
 	for (int i = 0; i < 3; i++) {
 		sigma[i] = sqrt((estXYZ[i] - XYZ[i])*(estXYZ[i] - XYZ[i]));
@@ -241,12 +238,12 @@ cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Vec3d Lm
 }
 
 //	RGBŠK’²’l‚ğ“ü—Í‚µ‚Äƒpƒ‰ƒ[ƒ^‚ğŠî‚ÉXYZ‚ğo—Í‚·‚éŠÖ”
-cv::Vec3d calcXYZ(cv::Vec3d BGR, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_)
+cv::Vec3d calcXYZ(cv::Vec3d BGR, cv::Vec3d gamma_, cv::Mat V_)
 {
-	//	1. BGRŠK’²’l¨BGRóŒõ‹P“x
+	//	1. BGRŠK’²’l¨BGRóŒõƒpƒ[[0,1]
 	cv::Vec3d YBGR;
 	for (int i = 0; i < 3; i++) {
-		YBGR[i] = Lmax_[i] * pow(BGR[i] / 255.0, gamma_[i]);
+		YBGR[i] = pow(BGR[i] / 255.0, gamma_[i]);
 	}
 	//	2. BGR¨XYZ•ÏŠ·
 	cv::Vec3d XYZ;
@@ -295,36 +292,38 @@ int main(void)
 	}
 	cout << "\n--------------------------------------\n" << endl;
 	cout << "\nXYZ = \n" << XYZs[0] << "\n" << XYZs[1] << "\n" << XYZs[2]
-		<< "\nEstimated XYZ = \n" << calcXYZ(BGRs[0], gamma, Lmax, V_BGR2XYZ)
-		<< "\n" << calcXYZ(BGRs[1], gamma, Lmax, V_BGR2XYZ)
-		<< "\n" << calcXYZ(BGRs[2], gamma, Lmax, V_BGR2XYZ) << endl;
+		<< "\nEstimated XYZ = \n" << calcXYZ(BGRs[0], gamma, V_BGR2XYZ)
+		<< "\n" << calcXYZ(BGRs[1], gamma, V_BGR2XYZ)
+		<< "\n" << calcXYZ(BGRs[2], gamma, V_BGR2XYZ) << endl;
 	system("PAUSE");
 	while (1) {
-		cv::randn(gamma, Scalar(1.2), Scalar(0.4));
-		cv::randn(Lmax, Scalar(500.0), Scalar(300.0));
-		cv::randu(V_BGR2XYZ, Scalar(-3.0), Scalar(3.0));
+		cv::randn(gamma, Scalar(1.0), Scalar(0.3));
+		cv::randu(V_BGR2XYZ, Scalar(-100.0), Scalar(500.0));
 
-		double e = GaussNewtonMethod(BGRs, XYZs, gamma, Lmax, V_BGR2XYZ);
-		if (e < 3.0e6) { 
-			cout << "error = " << e << endl; 
-			cout << "\nV_BGR2XYZ = \n" << V_BGR2XYZ << endl;
-			cout << "\ngamma_BGR = " << gamma
-				<< "\nLmax_BGR = " << Lmax << endl;
-		}
+
+		//	cout << "\nXYZ = \n" << XYZs[0] << "\n" << XYZs[1] << "\n" << XYZs[2]
+		//		<< "\nEstimated XYZ = \n" << calcXYZ(BGRs[0], gamma, V_BGR2XYZ)
+		//		<< "\n" << calcXYZ(BGRs[1], gamma, V_BGR2XYZ)
+		//		<< "\n" << calcXYZ(BGRs[2], gamma, V_BGR2XYZ) << endl;
+		double e = GaussNewtonMethod(BGRs, XYZs, gamma, V_BGR2XYZ);
+		//if (e < 1.0e6) { 
+			//cout << "error = " << e << endl; 
+		//	cout << "\nV_BGR2XYZ = \n" << V_BGR2XYZ << endl;
+		//	cout << "\ngamma_BGR = " << gamma << endl;
+		//}
 		if (0.0 < e && e < 100.0)break;
 	}
 	cout << "\n\n----------------------"
 		<< "\n\tResult"
 		<< "\n----------------------"
 		<< "\ngamma_BGR = " << gamma
-		<< "\nLmax_BGR = " << Lmax
 		<< "\nV_BGR2XYZ = \n" << V_BGR2XYZ
 		<< endl;
 
 	cout << "\nXYZ = \n" << XYZs[0] << "\n" << XYZs[1] << "\n" << XYZs[2]
-		<< "\nEstimated XYZ = \n" << calcXYZ(BGRs[0], gamma, Lmax, V_BGR2XYZ)
-		<< "\n" << calcXYZ(BGRs[1], gamma, Lmax, V_BGR2XYZ)
-		<< "\n" << calcXYZ(BGRs[2], gamma, Lmax, V_BGR2XYZ) << endl;
+		<< "\nEstimated XYZ = \n" << calcXYZ(BGRs[0], gamma, V_BGR2XYZ)
+		<< "\n" << calcXYZ(BGRs[1], gamma, V_BGR2XYZ)
+		<< "\n" << calcXYZ(BGRs[2], gamma, V_BGR2XYZ) << endl;
 	system("PAUSE");
 	return 0;
 }
