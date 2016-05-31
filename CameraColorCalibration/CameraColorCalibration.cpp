@@ -38,15 +38,15 @@ cv::Vec3d Lmax(200.0, 800.0, 500.0);	//	受光感度 B, G, R
 //	cv::Point2d(0.5, 0.3)				//	xR, yR
 //};
 cv::Mat V_BGR2XYZ = (cv::Mat_<double>(3, 3) << 	//	ガンマ補正済みのBGRからXYZへの線形変換行列
-	-0.3, 0.2, 2.1,
-	0.5, 1.1, 1.2,
+	-0.6, 0.2, 2.1,
+	0.5, 1.0, 0.2,
 	1.5, 1.3, -0.8
 	);
 
 //	関数プロトタイプ
 cv::Mat calcErrorVector(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Mat params_);
 double goldenRatioSearch(std::vector<cv::Vec3d> BGRs_, std::vector < cv::Vec3d> XYZs_, cv::Mat params_, cv::Mat d_params_);
-void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, cv::Mat &V_);
+double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, cv::Mat &V_);
 cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_);
 cv::Vec3d calcError(cv::Vec3d BGR, cv::Vec3d XYZ, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_);
 cv::Vec3d calcXYZ(cv::Vec3d BGR, cv::Vec3d gamma_, cv::Vec3d Lmax_, cv::Mat V_);
@@ -68,7 +68,7 @@ double goldenRatioSearch(std::vector<cv::Vec3d> BGRs_, std::vector < cv::Vec3d> 
 	cv::Mat sigma1 = calcErrorVector(BGRs_, XYZs_, params_new1);
 	//	内分後の誤差関数2
 	cv::Mat sigma2 = calcErrorVector(BGRs_, XYZs_, params_new2);
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 16; i++) {
 		if (norm(sigma1) < norm(sigma2)) {
 			//	上界をalpha2に更新
 			ub = alpha2;
@@ -120,7 +120,7 @@ cv::Mat calcErrorVector(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZ
 }
 
 //	Gauss-Newton法
-void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, cv::Mat &V_)
+double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d &gamma_, cv::Vec3d &Lmax_, cv::Mat &V_)
 {
 	cv::Mat sigma(XYZs_.size() * 3, 1, CV_64FC1);		//	二乗誤差関数の要素毎のベクトル sigma(params)
 	cv::Mat params(15, 1, CV_64FC1);					//	15個のパラメータベクトル params の初期値
@@ -136,7 +136,7 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 
 	//	更新値の評価関数errorが閾値以下になったら抜け出す
 	double error = 100.0;
-	for (int count = 0; error > 1.0e-6 && count < 10000; count++) {
+	for (int count = 0; error > 1.0e-6 && count < 3000; count++) {
 		//	更新後のパラメータ
 		cv::Vec3d gamma_new(params.at<double>(0), params.at<double>(2), params.at<double>(4));
 		cv::Vec3d Lmax_new(params.at<double>(1), params.at<double>(3), params.at<double>(5));
@@ -165,7 +165,8 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 		params = params + alpha*d_params;
 		//	増分の大きさの比較
 		error = cv::norm(d_params);
-		cout << "count\t" << count << ":\terror = " << error << "\tgain = " << alpha << endl;
+		//cout << "count\t" << count << ":\terror = " << error << "\tgain = " << alpha << endl;
+		if (error > 1.0e8) break;
 	}
 
 	//	結果を参照渡し
@@ -177,7 +178,11 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 			VV.at<double>(i, j) = params.at<double>(6 + i * 3 + j);
 		}
 	}
-	V_ = VV.clone();
+	V_ = VV.clone(); 
+	//cout << "error = " << error << endl;
+
+
+	return error;
 } 
 
 //	sigma(params)のparamsに対するヤコビ行列Jの導出
@@ -294,9 +299,20 @@ int main(void)
 		<< "\n" << calcXYZ(BGRs[1], gamma, Lmax, V_BGR2XYZ)
 		<< "\n" << calcXYZ(BGRs[2], gamma, Lmax, V_BGR2XYZ) << endl;
 	system("PAUSE");
-	
-	GaussNewtonMethod(BGRs, XYZs, gamma, Lmax, V_BGR2XYZ);
+	while (1) {
+		cv::randn(gamma, Scalar(1.2), Scalar(0.4));
+		cv::randn(Lmax, Scalar(500.0), Scalar(300.0));
+		cv::randu(V_BGR2XYZ, Scalar(-3.0), Scalar(3.0));
 
+		double e = GaussNewtonMethod(BGRs, XYZs, gamma, Lmax, V_BGR2XYZ);
+		if (e < 3.0e6) { 
+			cout << "error = " << e << endl; 
+			cout << "\nV_BGR2XYZ = \n" << V_BGR2XYZ << endl;
+			cout << "\ngamma_BGR = " << gamma
+				<< "\nLmax_BGR = " << Lmax << endl;
+		}
+		if (0.0 < e && e < 100.0)break;
+	}
 	cout << "\n\n----------------------"
 		<< "\n\tResult"
 		<< "\n----------------------"
