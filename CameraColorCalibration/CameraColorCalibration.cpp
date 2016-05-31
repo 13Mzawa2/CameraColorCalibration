@@ -30,11 +30,11 @@ using namespace cv;
 using namespace std;
 
 //	最小化パラメータと初期値
-cv::Vec3d gamma(2.2,2.2,2.2);			//	ガンマ係数 B, G, R
-cv::Vec3d Lmax(100.0, 400.0, 300.0);	//	受光感度 B, G, R
-std::vector<cv::Point2d> xy = {				//	受光体のxy色度
-	cv::Point2d(0.2, 0.2),				//	xB, yB
-	cv::Point2d(0.25, 0.5),				//	xG, yG
+cv::Vec3d gamma(1.0,1.0,1.0);			//	ガンマ係数 B, G, R
+cv::Vec3d Lmax(600.0, 1200.0, 800.0);	//	受光感度 B, G, R
+std::vector<cv::Point2d> xy = {			//	受光体のxy色度
+	cv::Point2d(0.1, 0.2),				//	xB, yB
+	cv::Point2d(0.3, 0.5),				//	xG, yG
 	cv::Point2d(0.5, 0.3)				//	xR, yR
 };
 
@@ -59,7 +59,8 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 		params.at<double>(i*4 + 3) = xy_[i].y;
 	}
 	//	更新値の評価関数errorが閾値以下になったら抜け出す
-	for (double error = 100.0; error > 1.0e-2;) {
+	double error = 100.0;
+	for (int count = 0; error > 1.0e-5 && count < 1000; count++) {
 		//	更新後のパラメータ
 		cv::Vec3d gamma_new(params.at<double>(0 + 0), params.at<double>(0 + 4), params.at<double>(0 + 8));
 		cv::Vec3d Lmax_new(params.at<double>(1 + 0), params.at<double>(1 + 4), params.at<double>(1 + 8));
@@ -100,7 +101,7 @@ void GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs
 //	XYZは全て別要素として扱い，XYZXYZ...と格納されている
 cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Vec3d gamma_, cv::Vec3d Lmax_, std::vector<cv::Point2d> xy_)
 {
-	const double dx = 1.0e-6;			//	パラメータの増分
+	const double dx = 1.0e-5;			//	パラメータの増分
 	std::vector<double> params;			//	パラメータは全部で12次元
 	for (int i = 0; i < 3; i++) {		//	B関係全て，G関係全て，R関係全て，の順に並ぶ
 		params.push_back(gamma_[i]);
@@ -134,9 +135,8 @@ cv::Mat JacobianMat(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, 
 				Jt.at<double>(i, j*3+k) = (sigma_d[k] - sigma[k]) / dx;			//	dsi/dxi
 			}
 		}
-		params_d.clear();		//	パラメータベクトルの開放
 	}
-	return Jt.t();		//	↑は間違えてJ.t()を求めてたためもう一度転置
+	return Jt.t();		//	↑はJ.t()を求めてたのでもう一度転置
 }
 
 //	色の推定値と測定値との二乗誤差の平方根 sigma(params) (X, Y, Zの順)
@@ -207,8 +207,12 @@ int main(void)
 		XYZs.push_back(Vec3d(data[0], data[1], data[2]));
 		BGRs.push_back(Vec3d(data[3], data[4], data[5]));
 	}
+
+	cout << "XYZ = " << XYZs[0] << XYZs[1] << XYZs[2] 
+		<< "\nEstimated XYZ = " << calcXYZ(BGRs[0], gamma, Lmax, xy) << calcXYZ(BGRs[1], gamma, Lmax, xy) << calcXYZ(BGRs[2], gamma, Lmax, xy) << endl;
 	
 	GaussNewtonMethod(BGRs, XYZs, gamma, Lmax, xy);
+
 	cout << "\n\n----------------------"
 		<< "\n\tResult"
 		<< "\n----------------------"
@@ -218,7 +222,9 @@ int main(void)
 		<< "\nxy_G = " << xy[1]
 		<< "\nxy_R = " << xy[2]
 		<< endl;
-	cout << "XYZ = " << XYZs[0] << "\nEstimated XYZ = " << calcXYZ(BGRs[0], gamma, Lmax, xy) << endl;
+
+	cout << "XYZ = " << XYZs[0] << XYZs[1] << XYZs[2]
+		<< "\nEstimated XYZ = " << calcXYZ(BGRs[0], gamma, Lmax, xy) << calcXYZ(BGRs[1], gamma, Lmax, xy) << calcXYZ(BGRs[2], gamma, Lmax, xy) << endl;
 
 	system("PAUSE");
 	return 0;
