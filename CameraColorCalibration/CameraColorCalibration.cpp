@@ -41,6 +41,7 @@ cv::Mat V_BGR2XYZ = (cv::Mat_<double>(3, 3) << 	//	ƒKƒ“ƒ}•â³Ï‚İ‚ÌBGR‚©‚çXYZ‚Ö‚
 	0.5, 1.0, 0.2,
 	1.5, 1.3, -0.8
 	);
+const double thresh = 3.0e-6;
 
 //	ŠÖ”ƒvƒƒgƒ^ƒCƒv
 cv::Mat calcErrorVector(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XYZs_, cv::Mat params_);
@@ -133,7 +134,7 @@ double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XY
 	//cout << params << endl;
 	//	XV’l‚Ì•]‰¿ŠÖ”error‚ªè‡’lˆÈ‰º‚É‚È‚Á‚½‚ç”²‚¯o‚·
 	double error = 100.0;
-	for (int count = 0; error > 1.0e-6 && count < 1000; count++) {
+	for (int count = 0; error > thresh && count < 500; count++) {
 		//	XVŒã‚Ìƒpƒ‰ƒ[ƒ^
 		cv::Vec3d gamma_new(params.at<double>(0), params.at<double>(1), params.at<double>(2));
 		cv::Mat V_new(3, 3, CV_64FC1);
@@ -161,7 +162,7 @@ double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XY
 		params = params + alpha*d_params;
 		//	‘•ª‚Ì‘å‚«‚³‚Ì”äŠr
 		error = cv::norm(d_params);
-		cout << "count\t" << count << ":\terror = " << error << "\tgain = " << alpha << endl;
+		//cout << "count\t" << count << ":\terror = " << error << "\tgain = " << alpha << endl;
 		//if (error > 1.0e8) break;
 	}
 
@@ -174,7 +175,7 @@ double GaussNewtonMethod(std::vector<cv::Vec3d> BGRs_, std::vector<cv::Vec3d> XY
 		}
 	}
 	V_ = VV.clone(); 
-	//cout << "error = " << error << endl;
+	cout << "error = " << error << endl;
 
 
 	return error;
@@ -298,7 +299,7 @@ int main(void)
 	system("PAUSE");
 	while (1) {
 		cv::randn(gamma, Scalar(1.0), Scalar(0.3));
-		cv::randu(V_BGR2XYZ, Scalar(-100.0), Scalar(500.0));
+		cv::randu(V_BGR2XYZ, Scalar(-200.0), Scalar(800.0));
 
 
 		//	cout << "\nXYZ = \n" << XYZs[0] << "\n" << XYZs[1] << "\n" << XYZs[2]
@@ -311,7 +312,7 @@ int main(void)
 		//	cout << "\nV_BGR2XYZ = \n" << V_BGR2XYZ << endl;
 		//	cout << "\ngamma_BGR = " << gamma << endl;
 		//}
-		if (0.0 < e && e < 100.0)break;
+		if (0.0 < e && e < thresh)break;
 	}
 	cout << "\n\n----------------------"
 		<< "\n\tResult"
